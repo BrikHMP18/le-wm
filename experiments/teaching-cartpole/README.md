@@ -315,6 +315,30 @@ train / 10 validation batches) completed, logged to
 `mu-robotics/lewm-cartpole/runs/smoke`, and saved `weights_epoch_1.pt` to the
 volume. These are engineering checks, not model results.
 
+## Evaluation and report artifacts
+
+All run from the fork root with the fork's `.venv`, after downloading the epoch-9
+checkpoints and decoders (`modal volume get lewm-cartpole stablewm/checkpoints/<run>`
+and `stablewm/decoders/<run>-weights_epoch_9` into `checkpoints/` and
+`checkpoints/decoders/`). On a laptop, wrap each command in
+`systemd-run --user --scope -p MemoryMax=6G`: `action`/`observation` use one-row
+HDF5 chunks, and whole-column reads cost ~8 GB, so these scripts read them in slices.
+
+| Script | Produces |
+| --- | --- |
+| `eval_lewm.py --run checkpoints/<run> --weights weights_epoch_9.pt [--rollout 20]` | `outputs/eval-<run>-epoch9.json`: held-out latent one-step and open-loop errors with "nothing changes" and shuffled-action baselines, linear probes with an untrained control |
+| `physical_rollout.py --run checkpoints/<run> --rollout <4 or 20>` | `outputs/physical-<run>-epoch9.json`: open-loop error in cm and degrees through the probes, per policy (not used in the report) |
+| `modal_train.py --background --decoder --run-name <run>` | visualization decoder on the volume (`decoder.py`: frozen world model, 5 epochs) |
+| `decode_video.py`, `compare_video.py` | paper-style decoded videos in `outputs/videos/` |
+| `report_q2e.py` | `q2e_imagination.pdf` and `q2e_results.json` in the assignment report (every Q2(e) number) |
+| `plot_eval.py` | quick-look comparison figures in `outputs/` |
+| `hf_upload.py` | public Hugging Face dataset and model repos with generated cards |
+
+Rollout 4 (frameskip 5) and 20 (frameskip 1) both cover 1 s. Published copies:
+[dataset](https://huggingface.co/datasets/Autobrik/teaching-cartpole-10k-v1),
+[frameskip 5](https://huggingface.co/Autobrik/lewm-teaching-cartpole-fs5),
+[frameskip 1](https://huggingface.co/Autobrik/lewm-teaching-cartpole-fs1).
+
 ## Verification and assignment report
 
 ```bash
