@@ -255,23 +255,15 @@ def imagination_figure(path):
 def main():
     REPORT.mkdir(parents=True, exist_ok=True)
     res = results()
-    rollout_figure(res, REPORT / "q2e_rollout.pdf")
-    physical_figure(physical_results(res), REPORT / "q2e_physical.pdf")
+    # The latent-rollout and physical-unit figures were dropped from the report; their numbers
+    # stay in q2e_results.json (call rollout_figure / physical_figure with a path to redraw them).
+    physical_results(res)
+    for run in res["runs"].values():
+        run.pop("_curve")  # only used to draw the dropped latent-rollout figure
     imagination_figure(REPORT / "q2e_imagination.pdf")
     res["imagination_figure"] = {"episodes": [e for e, _ in EPISODES], "times_s": TIMES}
     (REPORT / "q2e_results.json").write_text(json.dumps(res, indent=2) + "\n")
-    print(
-        "wrote",
-        *(
-            REPORT / n
-            for n in (
-                "q2e_rollout.pdf",
-                "q2e_physical.pdf",
-                "q2e_imagination.pdf",
-                "q2e_results.json",
-            )
-        ),
-    )
+    print("wrote", REPORT / "q2e_imagination.pdf", REPORT / "q2e_results.json")
 
 
 if __name__ == "__main__":
