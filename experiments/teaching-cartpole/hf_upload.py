@@ -1,14 +1,16 @@
 # ruff: noqa: E501  (model-card Markdown tables cannot be wrapped)
-"""Back up epoch-9 LeWM TeachingCartpole checkpoints (world model + decoder) to Hugging Face.
+"""Publish the TeachingCartpole dataset and epoch-9 LeWM checkpoints to Hugging Face.
 
-One private model repo per run, with a generated model card whose numbers are
-read from the evaluation reports (not typed by hand):
+One public dataset repo (cartpole-10k-v1) and one public model repo per run
+(world model + decoder), with cards whose numbers are read from the manifest and
+the evaluation reports (not typed by hand):
 
     .venv/bin/python experiments/teaching-cartpole/hf_upload.py            # stage + upload
     .venv/bin/python experiments/teaching-cartpole/hf_upload.py --dry-run  # stage only
 """
 
 import argparse
+import collections
 import json
 import shutil
 import subprocess
@@ -22,6 +24,12 @@ HERE = Path(__file__).resolve().parent
 FORK = HERE.parents[1]
 CK, OUT = HERE / "checkpoints", HERE / "outputs"
 OWNER, WEIGHTS = "Autobrik", "weights_epoch_9.pt"
+DATA = HERE / "data" / "cartpole-10k-v1"
+DATASET_REPO = "teaching-cartpole-10k-v1"
+REPORT_FIGS = Path(
+    "/home/autobrik/Projects/personal/brik-meza-knowledge-base/education/mcgill-msc/"
+    "fall-2026/comp-765/assignments/assignment-1/report/figures"
+)
 SWM_REV = "21446f1ede6d5284e981bd7b47f432b994e6d812"
 
 RUNS = {
@@ -126,7 +134,7 @@ Q2(e). Companion run: [`{OWNER}/lewm-teaching-cartpole-{other}`](https://hugging
 
 ## Data and training
 
-- **Dataset** `cartpole-10k-v1` (not uploaded): 10,000 episodes, 1,507,974 transitions at
+- **Dataset** [`{OWNER}/{DATASET_REPO}`](https://huggingface.co/datasets/{OWNER}/{DATASET_REPO}): 10,000 episodes, 1,507,974 transitions at
   20 Hz, 224×224 RGB, split by episode 8,000 / 1,000 / 1,000; half noisy-LQR balancing, half
   random forces (±10 N). Training uses `train.h5` only.
 - **Training**: upstream LeWM `train.py`, unmodified (prediction MSE + SIGReg λ=0.09,
@@ -193,16 +201,142 @@ dec = load_decoder(f"{{d}}/decoder")
 """
 
 
+def dataset_card(m, commit):
+    eps = m["episodes"]
+    n = collections.Counter((e["split"], e["policy"]) for e in eps)
+    tr = collections.Counter()
+    for e in eps:
+        tr[e["split"]] += e["transitions"]
+    ends = collections.Counter(e["end_reason"] for e in eps)
+    c, ph = m["config"], m["physics"]
+    splits = "\n".join(
+        f"| `{s}.h5` | {n[(s, 'lqr')] + n[(s, 'random')]:,} | {n[(s, 'lqr')]:,} | "
+        f"{n[(s, 'random')]:,} | {tr[s]:,} |"
+        for s in ("train", "validation", "test")
+    )
+    return f"""---
+license: mit
+task_categories: [robotics, reinforcement-learning]
+tags: [cartpole, world-model, lewm, jepa, stable-worldmodel, hdf5, pixels]
+pretty_name: TeachingCartpole 10k (v1)
+size_categories: [1M<n<10M]
+---
+
+# TeachingCartpole 10k (v1)
+
+Offscreen-rendered single-pole CartPole episodes (RGB frames, physical state, and the
+applied horizontal force) in the [stable-worldmodel](https://github.com/galilai-group/stable-worldmodel)
+HDF5 layout used to train [LeWorldModel](https://arxiv.org/abs/2603.19312). Collected for
+COMP 765 (McGill) Assignment 1, Q2(e). Models trained on it:
+[`{OWNER}/lewm-teaching-cartpole-fs5`](https://huggingface.co/{OWNER}/lewm-teaching-cartpole-fs5),
+[`{OWNER}/lewm-teaching-cartpole-fs1`](https://huggingface.co/{OWNER}/lewm-teaching-cartpole-fs1).
+
+![coverage](figures/coverage.png)
+
+## Contents
+
+{len(eps):,} episodes, {sum(tr.values()):,} transitions, split **by episode** (seed {c["seed"]}):
+
+| File | Episodes | Noisy LQR | Random | Transitions |
+|---|---|---|---|---|
+{splits}
+
+End reasons: {ends["time_limit"]:,} time limit ({c["steps"]} transitions), {ends["track_limit"]:,}
+track/camera bound (|x| ≥ {c["track_limit"]} m). `manifest.json` records per-episode seeds,
+initial states, policy, split, and end reason, plus physics constants and source hashes.
+
+| HDF5 column | Shape / content |
+|---|---|
+| `pixels` | `(N, 224, 224, 3)` uint8 RGB, fixed camera, gzip |
+| `action` | `(N, 1)` float32 horizontal force in N, ±{c["force_limit"]} |
+| `observation` | `(N, 4)` float64 `{m["state_order"]}` (m, m/s, rad/s, rad) |
+| `timestamp` | `(N,)` simulated seconds from reset |
+| `episode_id`, `terminated`, `truncated` | per row |
+| `ep_len`, `ep_offset` | rows and start row of each episode |
+
+- **Alignment:** {m["action_alignment"]}. An episode with T transitions has T+1 rows.
+  Never treat the final NaN as a zero-force action.
+- θ = 0 is hanging down, θ = π upright; angles are unwrapped.
+- Control at {1 / m["control_dt"]:.0f} Hz (dt {m["control_dt"]} s = {c["substeps"]} physics substeps of
+  {c["physics_dt"]} s). Physics: g {ph["g"]}, cart M {ph["M"]} kg, pole m {ph["m"]} kg, l {ph["l"]} m,
+  cart viscous friction b {ph["b"]} N·s/m (force − b·ẋ). Frames are stored at every control step; subsample at load time
+  with the loader's `frameskip`.
+- **Policies:** noisy local LQR balancing from near upright (Gaussian force noise
+  σ {c["noise_std"]} N) and uniform random forces held {c["action_hold"]} steps from mixed
+  initial angles. Little swing-up behavior is present.
+
+## Loading
+
+```python
+import hdf5plugin, stable_worldmodel as swm
+from huggingface_hub import snapshot_download
+
+d = snapshot_download("{OWNER}/{DATASET_REPO}", repo_type="dataset")
+ds = swm.data.load_dataset(f"{{d}}/train.h5", frameskip=5, num_steps=4,
+                           keys_to_load=["pixels", "action", "observation"])
+```
+
+Pass an **absolute** path (a relative one is resolved as a Hub repo id). `action` and
+`observation` are stored with one-row chunks: reading a whole column at once (e.g. the
+loader's `keys_to_cache`) costs ~8 GB of HDF5 bookkeeping for `train.h5`. Read them in
+slices of ~50k rows instead (identical arrays, <0.5 GB), as the fork's `eval_lewm.py` does.
+
+## Validation
+
+Every episode's structure and boundaries were checked; a physical replay of 10 episodes per
+split reproduces the stored states; the stable-worldmodel native reader was checked on the
+first/last windows of every split (`validation/`). Collector: fork `BrikHMP18/le-wm`, branch
+`feat/teaching-cartpole-data`, commit `{commit}` (`experiments/teaching-cartpole`).
+"""
+
+
+def upload_dataset(api, commit, dry_run):
+    m = json.loads((DATA / "manifest.json").read_text())
+    stage = OUT / "hf_stage" / DATASET_REPO
+    shutil.rmtree(stage, ignore_errors=True)
+    (stage / "figures").mkdir(parents=True)
+    (stage / "validation").mkdir()
+    shutil.copy(REPORT_FIGS / "q2e_collection_coverage.png", stage / "figures/coverage.png")
+    shutil.copy(REPORT_FIGS / "q2e_collection_summary.json", stage / "figures/summary.json")
+    for f in (
+        "cartpole-10k-v1-validation.log",
+        "cartpole-10k-v1-native-reader.json",
+        "collection-cartpole-10k-v1.log",
+    ):
+        shutil.copy(OUT / f, stage / "validation" / f)
+    (stage / "README.md").write_text(dataset_card(m, commit))
+    print("staged", stage, "(+ data files from", DATA, ")")
+    if dry_run:
+        return
+    repo_id = f"{OWNER}/{DATASET_REPO}"
+    api.create_repo(repo_id, repo_type="dataset", private=False, exist_ok=True)
+    api.update_repo_settings(repo_id, repo_type="dataset", private=False)
+    api.upload_folder(
+        repo_id=repo_id, repo_type="dataset", folder_path=DATA,
+        allow_patterns=["*.h5", "manifest.json", "preview/*"],
+        commit_message=f"cartpole-10k-v1 HDF5 splits, manifest, preview ({commit})",
+    )  # fmt: skip
+    api.upload_folder(
+        repo_id=repo_id, repo_type="dataset", folder_path=stage,
+        commit_message="Dataset card, coverage figure, validation logs",
+    )  # fmt: skip
+    print("uploaded", f"https://huggingface.co/datasets/{repo_id}")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--dry-run", action="store_true")
-    p.add_argument("--public", action="store_true", help="default: private repos")
+    p.add_argument("--private", action="store_true", help="default: public repos")
     args = p.parse_args()
 
     commit = subprocess.check_output(
         ["git", "-C", str(FORK), "rev-parse", "--short", "HEAD"], text=True
     )
     act = action_stats()
+    from huggingface_hub import HfApi
+
+    api = HfApi()
+    upload_dataset(api, commit.strip(), args.dry_run)
     stage_root = OUT / "hf_stage"
     for run, meta in RUNS.items():
         stage = stage_root / meta["repo"]
@@ -231,10 +365,9 @@ def main():
         print("staged", stage)
 
         if not args.dry_run:
-            from huggingface_hub import HfApi
-
-            api, repo_id = HfApi(), f"{OWNER}/{meta['repo']}"
-            api.create_repo(repo_id, repo_type="model", private=not args.public, exist_ok=True)
+            repo_id = f"{OWNER}/{meta['repo']}"
+            api.create_repo(repo_id, repo_type="model", private=args.private, exist_ok=True)
+            api.update_repo_settings(repo_id, private=args.private)  # also flips existing repos
             api.upload_folder(
                 repo_id=repo_id,
                 folder_path=stage,
