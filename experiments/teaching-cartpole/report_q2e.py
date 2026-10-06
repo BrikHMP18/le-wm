@@ -7,6 +7,8 @@ with the visualization decoders, writing into the assignment report:
 
   q2e_rollout.pdf      open-loop latent error vs horizon (s), fs5 and fs1, each
                        with its own "nothing changes" baseline
+  q2e_physical.pdf     open-loop error in physical units (cart cm, pole degrees) read
+                       by a linear probe, per behavior policy (physical_rollout.py)
   q2e_imagination.pdf  real vs decoded open-loop imagination of both models,
                        two held-out episodes at three instants
   q2e_results.json     every number quoted in the report text and tables
@@ -111,6 +113,60 @@ def rollout_figure(res, path):
     plt.close(fig)
 
 
+def physical_results(res):
+    """Add physical-unit errors at 0.25 / 0.5 / 1 s (physical_rollout.py outputs)."""
+    curves = {}
+    for key, run in RUNS.items():
+        d = json.loads((HERE / "outputs" / f"physical-{run}-epoch9.json").read_text())
+        at = {
+            f"{s:.2f}": i for i, s in enumerate(d["horizon_s"]) if round(s, 2) in (0.25, 0.5, 1.0)
+        }
+        res["runs"][key]["physical_test_windows"] = d["test_windows"]
+        for q in ("cart_position_error_cm", "pole_angle_error_deg"):
+            res["runs"][key][q] = {
+                ref: {
+                    g: {s: v[g]["mean"][i] for s, i in at.items()} for g in ("all", "lqr", "random")
+                }
+                for ref, v in d[q].items()
+            }
+        curves[key] = d
+    return curves
+
+
+def physical_figure(curves, path):
+    fig, axes = plt.subplots(2, 2, figsize=(6.6, 4.4), sharex=True)
+    quantities = [("cart_position_error_cm", "cart position error (cm)"),
+                  ("pole_angle_error_deg", "pole angle error (deg)")]  # fmt: skip
+    groups = [("lqr", "noisy LQR episodes"), ("random", "random-force episodes")]
+    for i, (q, ylabel) in enumerate(quantities):
+        for j, (g, title) in enumerate(groups):
+            ax = axes[i, j]
+            for key, d in curves.items():
+                h = d["horizon_s"]  # no point at t = 0: the probe already has error there
+                fs = d["frameskip"]
+                ax.plot(h, d[q]["model"][g]["mean"], color=COLORS[key], marker="o", ms=2.5,
+                        markevery=max(1, len(h) // 8), label=f"LeWM, frameskip {fs}")  # fmt: skip
+                ax.plot(d["horizon_s"], d[q]["probe_floor"][g]["mean"], color=COLORS[key], ls=":",
+                        lw=1, label=f"probe floor, frameskip {fs}")  # fmt: skip
+            base = curves["fs1"]  # finest horizon grid; the fs5 windows give nearly the same curve
+            ax.plot([0.0] + base["horizon_s"], [0.0] + base[q]["nothing_changes"][g]["mean"],
+                    color="0.45", ls="--", lw=1, label='"nothing changes"')  # fmt: skip
+            ax.grid(alpha=0.3)
+            ax.set_ylim(bottom=0)
+            if i == 0:
+                ax.set_title(title, fontsize=9)
+            if j == 0:
+                ax.set_ylabel(ylabel, fontsize=8.5)
+            if i == 1:
+                ax.set_xlabel("open-loop horizon (s)", fontsize=8.5)
+            ax.tick_params(labelsize=7.5)
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=3, fontsize=7.5, frameon=False)
+    fig.tight_layout(rect=(0, 0.1, 1, 1))
+    fig.savefig(path)
+    plt.close(fig)
+
+
 def imagination_figure(path):
     dt = json.loads((DATA / "manifest.json").read_text())["control_dt"]
     with h5py.File(DATA / "train.h5", "r") as f:
@@ -173,12 +229,21 @@ def main():
     REPORT.mkdir(parents=True, exist_ok=True)
     res = results()
     rollout_figure(res, REPORT / "q2e_rollout.pdf")
+    physical_figure(physical_results(res), REPORT / "q2e_physical.pdf")
     imagination_figure(REPORT / "q2e_imagination.pdf")
     res["imagination_figure"] = {"episodes": [e for e, _ in EPISODES], "times_s": TIMES}
     (REPORT / "q2e_results.json").write_text(json.dumps(res, indent=2) + "\n")
     print(
         "wrote",
-        *(REPORT / n for n in ("q2e_rollout.pdf", "q2e_imagination.pdf", "q2e_results.json")),
+        *(
+            REPORT / n
+            for n in (
+                "q2e_rollout.pdf",
+                "q2e_physical.pdf",
+                "q2e_imagination.pdf",
+                "q2e_results.json",
+            )
+        ),
     )
 
 
