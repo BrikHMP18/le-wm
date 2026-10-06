@@ -195,14 +195,14 @@ def imagination_figure(path):
                 )  # fmt: skip
                 if key == "fs5":
                     cols.append((label, "real", [real[i] for i in idx]))
-                cols.append((label, f"frameskip {m['fs']}", [pred[i] for i in idx]))
+                cols.append((label, f"LeWorldModel\n(frameskip {m['fs']})", [pred[i] for i in idx]))
     # crop the letterbox: keep rows where any real frame has content
     stack = np.stack([img for c in cols if c[1] == "real" for img in c[2]])
     rows = np.flatnonzero((stack < 245).any(axis=(0, 2, 3)))
     r0, r1 = max(rows.min() - 4, 0), min(rows.max() + 5, stack.shape[1])
 
     cell = 6.6 / len(cols)  # inches per panel, full text width
-    height = len(TIMES) * cell * (r1 - r0) / stack.shape[2] + 0.85  # titles + legend
+    height = len(TIMES) * cell * (r1 - r0) / stack.shape[2] + 1.0  # two-line titles + legend
     fig, axes = plt.subplots(len(TIMES), len(cols), figsize=(6.6, height))
     for j, (label, title, imgs) in enumerate(cols):
         for i, img in enumerate(imgs):
@@ -232,11 +232,19 @@ def imagination_figure(path):
     from matplotlib.patches import Patch
 
     legend = [
+        Patch(facecolor="white", edgecolor="0.75", lw=0.8, label="real or seen frame"),
         Patch(
-            facecolor="white", edgecolor="0.75", lw=0.8, label="real frame, or frame the model sees"
+            facecolor="white",
+            edgecolor=COLORS["fs5"],
+            lw=1.6,
+            label="prediction, frameskip 5",
         ),
-        Patch(facecolor="white", edgecolor=COLORS["fs5"], lw=1.6, label="frameskip-5 prediction"),
-        Patch(facecolor="white", edgecolor=COLORS["fs1"], lw=1.6, label="frameskip-1 prediction"),
+        Patch(
+            facecolor="white",
+            edgecolor=COLORS["fs1"],
+            lw=1.6,
+            label="prediction, frameskip 1",
+        ),
     ]
     fig.legend(handles=legend, loc="lower center", ncol=3, fontsize=7.5, frameon=False)
     fig.tight_layout(rect=(0, 0.06, 1, 0.95), h_pad=0.3, w_pad=0.3)
