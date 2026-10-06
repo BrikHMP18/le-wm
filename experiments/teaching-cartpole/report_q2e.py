@@ -36,7 +36,9 @@ REPORT = Path(
 RUNS = {"fs5": "cartpole-fs5", "fs1": "cartpole-fs1"}
 COLORS = {"fs5": "C0", "fs1": "C1"}  # matplotlib defaults, as in the other Q2 figures
 EPISODES = [(11, "noisy LQR"), (478, "random forces")]  # held-out test episodes
-TIMES = [1.0, 3.0, 5.75]  # s; all after both models' context (0.75 s for fs5)
+# s; t = 0 is the first frame both models see (decoded, not predicted); the others are
+# after both models' context (up to 0.5 s for fs5), so they are open-loop predictions
+TIMES = [0.0, 1.0, 3.0, 5.75]
 
 
 def results():
@@ -208,14 +210,18 @@ def imagination_figure(path):
             ax.imshow(img[r0:r1])
             ax.set_xticks([])
             ax.set_yticks([])
+            seen = (
+                title == "real" or TIMES[i] == 0
+            )  # real frame, or the decoded frame the model saw
             for s in ax.spines.values():
                 imagined = COLORS["fs5"] if "5" in title else COLORS["fs1"]
-                s.set_color("0.75" if title == "real" else imagined)
-                s.set_linewidth(0.8 if title == "real" else 1.6)
+                s.set_color("0.75" if seen else imagined)
+                s.set_linewidth(0.8 if seen else 1.6)
             if i == 0:
                 ax.set_title(title, fontsize=7.5)
             if j == 0:
-                ax.set_ylabel(f"t = {TIMES[i]:.2f} s", fontsize=7.5)
+                ax.set_ylabel("t = 0 s\n(seen)" if TIMES[i] == 0 else f"t = {TIMES[i]:.2f} s",
+                              fontsize=7.5)  # fmt: skip
     for k, (_, label) in enumerate(EPISODES):
         x = (k + 0.5) / len(EPISODES)
         fig.text(x, 0.995, f"test episode {EPISODES[k][0]} ({label})", ha="center", va="top",
