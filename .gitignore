@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+experiments/teaching-cartpole/data/
+experiments/teaching-cartpole/outputs/
+experiments/teaching-cartpole/checkpoints/
+/outputs/

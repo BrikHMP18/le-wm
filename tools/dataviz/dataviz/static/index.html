@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dataset Viewer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Dataset Viewer</h1>
+    <select id="file" aria-label="Recording file"></select>
+    <span id="summary" class="muted"></span>
+    <span class="spacer"></span>
+    <span class="muted keys">space play · ←/→ frame · ↑/↓ episode</span>
+  </header>
+  <div class="layout">
+    <aside>
+      <div class="filters">
+        <input id="jump" type="number" min="0" placeholder="Go to episode #">
+        <div id="facets"></div>
+      </div>
+      <div id="count" class="muted small"></div>
+      <ol id="episodes"></ol>
+    </aside>
+    <main>
+      <section class="player">
+        <div id="cameras"></div>
+        <div class="controls">
+          <button id="prev" title="Previous frame">◀︎</button>
+          <button id="play" title="Play / pause">▶︎</button>
+          <button id="next" title="Next frame">▶︎▏</button>
+          <input id="scrub" type="range" min="0" value="0">
+          <select id="speed" aria-label="Playback speed">
+            <option value="0.25">0.25×</option>
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="2">2×</option>
+            <option value="4">4×</option>
+          </select>
+          <label class="small"><input id="loop" type="checkbox" checked> loop</label>
+          <label class="small"><input id="autonext" type="checkbox"> next ep</label>
+        </div>
+        <div id="status" class="mono small"></div>
+        <div id="attributes" class="tags"></div>
+      </section>
+      <section id="plots"></section>
+      <details>
+        <summary>Recording metadata</summary>
+        <pre id="metadata" class="mono small"></pre>
+      </details>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

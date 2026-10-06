@@ -180,5 +180,20 @@ PY
 
 After conversion, load via `swm.policy.AutoCostModel('pusht/lewm')` as usual.
 
+## TeachingCartpole experiment
+
+The single-pole Q2(e) collection pipeline is documented in
+[`experiments/teaching-cartpole/README.md`](experiments/teaching-cartpole/README.md).
+It provides an isolated environment, offscreen RGB/state/action collection,
+episode-level HDF5 splits, and validation/preview commands.
+
+To browse any of these HDF5 recordings (frames synced with state/action plots):
+
+```bash
+uv run --directory tools/dataviz dataviz ../../experiments/teaching-cartpole/data/cartpole-10k-v1 --open
+```
+
+See [`tools/dataviz/README.md`](tools/dataviz/README.md).
+
 ## Contact & Contributions
 Feel free to open [issues](https://github.com/lucas-maes/le-wm/issues)! For questions or collaborations, please contact `lucas.maes@mila.quebec`
